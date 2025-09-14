@@ -61,6 +61,11 @@ function App() {
     }
   }
 
+  const getItemQuantity = (itemId) => {
+    const cartItem = cart.find(item => item.id === itemId)
+    return cartItem ? cartItem.quantity : 0
+  }
+
   const updateQuantity = (id, newQuantity) => {
     if (newQuantity === 0) {
       setCart(cart.filter(item => item.id !== id))
@@ -249,12 +254,32 @@ function App() {
                       </span>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => addToCart(item)}
-                    className="btn-primary w-full mt-4"
-                  >
-                    Add to Cart
-                  </button>
+                  {getItemQuantity(item.id) === 0 ? (
+                    <button 
+                      onClick={() => addToCart(item)}
+                      className="btn-primary w-full mt-4"
+                    >
+                      Add to Cart
+                    </button>
+                  ) : (
+                    <div className="flex items-center justify-center space-x-3 mt-4">
+                      <button 
+                        onClick={() => updateQuantity(item.id, getItemQuantity(item.id) - 1)}
+                        className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
+                      >
+                        <span className="text-gray-700 font-bold text-lg">−</span>
+                      </button>
+                      <span className="font-semibold text-gray-900 text-lg min-w-[2rem] text-center">
+                        {getItemQuantity(item.id)}
+                      </span>
+                      <button 
+                        onClick={() => updateQuantity(item.id, getItemQuantity(item.id) + 1)}
+                        className="w-10 h-10 bg-gray-900 text-white rounded-full flex items-center justify-center hover:bg-gray-800 transition-colors"
+                      >
+                        <span className="font-bold text-lg">+</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
