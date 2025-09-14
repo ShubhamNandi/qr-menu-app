@@ -37,6 +37,14 @@ function App() {
       price: 699,
       category: 'Desserts',
       image: '🍰'
+    },
+    {
+      id: 5,
+      name: 'Bhel Puri',
+      description: 'Crispy puffed rice with tangy tamarind chutney, onions, and sev',
+      price: 149,
+      category: 'Street Food',
+      image: '/bhelpuri.jpeg'
     }
   ]
 
@@ -219,7 +227,17 @@ function App() {
               {menuItems.map((item) => (
                 <div key={item.id} className="card hover:shadow-xl transition-shadow duration-300">
                   <div className="flex items-start space-x-4">
-                    <div className="text-4xl">{item.image}</div>
+                    <div className="text-4xl">
+                      {item.image.startsWith('/') ? (
+                        <img 
+                          src={item.image} 
+                          alt={item.name}
+                          className="w-16 h-16 object-cover rounded-lg"
+                        />
+                      ) : (
+                        item.image
+                      )}
+                    </div>
                     <div className="flex-1">
                       <div className="flex items-start justify-between">
                         <h3 className="text-lg font-semibold text-gray-900">{item.name}</h3>
@@ -273,7 +291,17 @@ function App() {
                   <div key={item.id} className="card">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-4">
-                        <div className="text-3xl">{item.image}</div>
+                        <div className="text-3xl">
+                          {item.image.startsWith('/') ? (
+                            <img 
+                              src={item.image} 
+                              alt={item.name}
+                              className="w-12 h-12 object-cover rounded-lg"
+                            />
+                          ) : (
+                            item.image
+                          )}
+                        </div>
                         <div>
                           <h3 className="font-semibold text-gray-900">{item.name}</h3>
                           <p className="text-gray-600">{formatPrice(item.price)}</p>
