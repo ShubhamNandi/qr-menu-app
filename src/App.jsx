@@ -1,9 +1,84 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+// API base URL - adjust if needed
+const API_BASE_URL = 'http://192.168.0.137:8000'
 
 function App() {
   const [activeTab, setActiveTab] = useState('menu')
   const [cart, setCart] = useState([])
   const [orderConfirmed, setOrderConfirmed] = useState(false)
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [tableNumber, setTableNumber] = useState(null)
+  const [tableToken, setTableToken] = useState(null)
+  const [tableError, setTableError] = useState(null)
+  const [orders, setOrders] = useState([])
+  const [orderFilter, setOrderFilter] = useState('all') // all, pending, delivered
+  const [orderId, setOrderId] = useState(null)
+
+  // Extract token from URL and fetch table number
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const token = urlParams.get('t')
+    
+    if (token) {
+      setTableToken(token)
+      // Clear token from URL
+      window.history.replaceState({}, '', window.location.pathname)
+      
+      // Fetch table number from API
+      fetch(`${API_BASE_URL}/api/qr-menu/table/${token}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('Invalid token')
+          }
+          return res.json()
+        })
+        .then(data => {
+          setTableNumber(data.table_number)
+          setTableError(null)
+        })
+        .catch(err => {
+          setTableError('Invalid table token. Please scan a valid QR code.')
+          console.error('Error fetching table number:', err)
+        })
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  const fetchOrders = async () => {
+    try {
+      let url = `${API_BASE_URL}/api/qr-menu/orders`
+      if (orderFilter !== 'all') {
+        url += `?status=${orderFilter}`
+      }
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        setOrders(data)
+      }
+    } catch (err) {
+      console.error('Error fetching orders:', err)
+    }
+  }
+
+  // Fetch orders when Orders tab is active
+  useEffect(() => {
+    if (activeTab === 'orders') {
+      fetchOrders()
+    }
+  }, [activeTab, orderFilter])
 
   const menuItems = [
     {
@@ -93,14 +168,82 @@ function App() {
     return `₹${price.toLocaleString('en-IN')}`
   }
 
-  const confirmOrder = () => {
-    setOrderConfirmed(true)
-    setActiveTab('menu')
-    // Reset after 5 seconds
-    setTimeout(() => {
-      setOrderConfirmed(false)
-      setCart([])
-    }, 5000)
+  const confirmOrder = async () => {
+    if (!tableNumber) {
+      alert('Table number not found. Please scan a valid QR code.')
+      return
+    }
+
+    if (cart.length === 0) {
+      alert('Your cart is empty!')
+      return
+    }
+
+    try {
+      const orderData = {
+        table_number: tableNumber,
+        items: cart.map(item => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          quantity: item.quantity,
+          category: item.category,
+          image: item.image
+        })),
+        total: getTotalPrice(),
+        timestamp: new Date().toISOString(),
+        status: 'pending'
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/qr-menu/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(orderData)
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setOrderId(data.order_id)
+        setOrderConfirmed(true)
+        setActiveTab('menu')
+        // Reset after 5 seconds
+        setTimeout(() => {
+          setOrderConfirmed(false)
+          setCart([])
+          setOrderId(null)
+        }, 5000)
+      } else {
+        throw new Error('Failed to save order')
+      }
+    } catch (err) {
+      console.error('Error confirming order:', err)
+      alert('Failed to place order. Please try again.')
+    }
+  }
+
+  const markOrderDelivered = async (orderId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/qr-menu/orders/${orderId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: 'delivered' })
+      })
+
+      if (res.ok) {
+        // Refresh orders list
+        fetchOrders()
+      } else {
+        throw new Error('Failed to update order')
+      }
+    } catch (err) {
+      console.error('Error updating order:', err)
+      alert('Failed to update order status. Please try again.')
+    }
   }
 
   if (orderConfirmed) {
@@ -145,7 +288,7 @@ function App() {
                 </div>
                 <span className="text-gray-700">Order Number</span>
               </div>
-              <span className="text-lg font-semibold text-blue-600">#{Math.floor(Math.random() * 10000) + 1000}</span>
+              <span className="text-lg font-semibold text-blue-600">#{orderId ? orderId.substring(0, 8) : 'N/A'}</span>
             </div>
 
             {/* Total Amount */}
@@ -183,16 +326,34 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-6">
+          {!isOnline && (
+            <div className="mb-3 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 flex items-center space-x-2">
+              <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414" />
+              </svg>
+              <span className="text-sm text-yellow-800 font-medium">You're offline - App works without internet!</span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">QSR Express Menu</h1>
-              <p className="text-gray-600 mt-1">Please select the items you want to order!</p>
+              <div className="flex items-center space-x-2 mt-1">
+                <p className="text-gray-600">Please select the items you want to order!</p>
+                {tableNumber && (
+                  <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
+                    Table {tableNumber}
+                  </span>
+                )}
+              </div>
+              {tableError && (
+                <p className="text-red-600 text-sm mt-1">{tableError}</p>
+              )}
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
               <button 
                 onClick={() => setActiveTab('menu')}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -218,13 +379,23 @@ function App() {
                   </span>
                 )}
               </button>
+              <button 
+                onClick={() => setActiveTab('orders')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  activeTab === 'orders' 
+                    ? 'bg-gray-900 text-white' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Orders
+              </button>
             </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-4 py-8 flex-grow">
         {activeTab === 'menu' && (
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-gray-900">Our Menu</h2>
@@ -377,13 +548,118 @@ function App() {
             )}
           </div>
         )}
+
+        {activeTab === 'orders' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center flex-wrap gap-4">
+              <h2 className="text-2xl font-bold text-gray-900">All Orders</h2>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setOrderFilter('all')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    orderFilter === 'all'
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setOrderFilter('pending')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    orderFilter === 'pending'
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Pending
+                </button>
+                <button
+                  onClick={() => setOrderFilter('delivered')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    orderFilter === 'delivered'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Delivered
+                </button>
+              </div>
+            </div>
+
+            {orders.length === 0 ? (
+              <div className="card text-center py-12">
+                <div className="text-6xl mb-4">📋</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">No orders found</h3>
+                <p className="text-gray-600">Orders will appear here once customers place them.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {orders.map((order) => (
+                  <div key={order.order_id} className="card">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <div className="flex items-center space-x-3 mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            Table {order.table_number}
+                          </h3>
+                          <span
+                            className={`px-3 py-1 rounded-full text-sm font-medium ${
+                              order.status === 'pending'
+                                ? 'bg-orange-100 text-orange-800'
+                                : 'bg-green-100 text-green-800'
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {new Date(order.timestamp).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Order ID: {order.order_id.substring(0, 8)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-bold text-gray-900">{formatPrice(order.total)}</p>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-100 pt-4 mt-4">
+                      <h4 className="font-semibold text-gray-900 mb-2">Items:</h4>
+                      <div className="space-y-2">
+                        {order.items.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-700">
+                              {item.name} × {item.quantity}
+                            </span>
+                            <span className="text-gray-600">{formatPrice(item.price * item.quantity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {order.status === 'pending' && (
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <button
+                          onClick={() => markOrderDelivered(order.order_id)}
+                          className="w-full bg-green-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-green-700 transition-colors"
+                        >
+                          Mark as Delivered
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-8 mt-16">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <p className="text-gray-400">© 2024 QR Menu App. All rights reserved.</p>
-          <p className="text-gray-500 mt-2">Scan the QR code to access this menu on your device</p>
+      <footer className="bg-gray-900 text-white py-4 sm:py-6 md:py-8 mt-auto">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-8 text-center">
+          <p className="text-gray-400 text-sm sm:text-base">© 2025 QR Menu App. All rights reserved.</p>
+          <p className="text-gray-500 mt-1 sm:mt-2 text-xs sm:text-sm md:text-base">Scan the QR code to access this menu on your device</p>
         </div>
       </footer>
     </div>
