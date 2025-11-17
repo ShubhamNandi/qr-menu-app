@@ -21,3 +21,37 @@
     @apply bg-white rounded-xl shadow-lg border border-gray-100 p-6;
   }
 }
+
+/* QR Scanner Styles */
+#qr-reader {
+  width: 100%;
+}
+
+#qr-reader__dashboard {
+  display: none; /* Hide the default dashboard, we have our own UI */
+}
+
+#qr-reader__camera_selection {
+  display: none; /* Hide camera selection, we use back camera by default */
+}
+
+#qr-reader__scan_region {
+  border: 2px solid #1f2937 !important;
+  border-radius: 12px;
+}
+
+/* Toast Animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}

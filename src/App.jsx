@@ -1,7 +1,63 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
 
-// API base URL - adjust if needed
-const API_BASE_URL = 'http://192.168.0.137:8000'
+// Dynamic API URL detection
+const getApiBaseUrl = () => {
+  // Use environment variable if set (for development)
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL
+  }
+  
+  // Auto-detect from current hostname (where frontend was loaded from)
+  const hostname = window.location.hostname
+  const protocol = window.location.protocol // http: or https:
+  
+  // Frontend on 9111, backend on 8000 (same hostname, different port)
+  return `${protocol}//${hostname}:8000`
+}
+
+// Toast notification component
+const Toast = ({ message, type = 'error', onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose()
+    }, 5000) // Auto-close after 5 seconds
+
+    return () => clearTimeout(timer)
+  }, [onClose])
+
+  const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500'
+  const icon = type === 'error' ? (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  ) : type === 'success' ? (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  ) : (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+
+  return (
+    <div className={`fixed top-4 right-4 ${bgColor} text-white px-6 py-4 rounded-lg shadow-2xl z-50 flex items-center space-x-3 min-w-[300px] max-w-md animate-slide-in`}>
+      <div className="flex-shrink-0">
+        {icon}
+      </div>
+      <p className="flex-1 font-medium">{message}</p>
+      <button
+        onClick={onClose}
+        className="flex-shrink-0 hover:bg-white/20 rounded p-1 transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  )
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('menu')
@@ -11,22 +67,37 @@ function App() {
   const [tableNumber, setTableNumber] = useState(null)
   const [tableToken, setTableToken] = useState(null)
   const [tableError, setTableError] = useState(null)
+  const [isLoadingTable, setIsLoadingTable] = useState(false)
   const [orders, setOrders] = useState([])
   const [orderFilter, setOrderFilter] = useState('all') // all, pending, delivered
   const [orderId, setOrderId] = useState(null)
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
+  const [orderError, setOrderError] = useState(null)
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false)
+  const [ordersError, setOrdersError] = useState(null)
+  const [isScanning, setIsScanning] = useState(false)
+  const [scanError, setScanError] = useState(null)
+  const qrCodeScannerRef = useRef(null)
+  const [toast, setToast] = useState(null)
 
-  // Extract token from URL and fetch table number
+  // Extract token from URL and fetch table number (runs immediately on mount)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const token = urlParams.get('t')
     
+    // Remove token from URL IMMEDIATELY (synchronous, before any state updates)
+    if (token) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    
     if (token) {
       setTableToken(token)
-      // Clear token from URL
-      window.history.replaceState({}, '', window.location.pathname)
+      setIsLoadingTable(true)
+      setTableError(null)
       
       // Fetch table number from API
-      fetch(`${API_BASE_URL}/api/qr-menu/table/${token}`)
+      const apiUrl = getApiBaseUrl()
+      fetch(`${apiUrl}/api/qr-menu/table/${token}`)
         .then(res => {
           if (!res.ok) {
             throw new Error('Invalid token')
@@ -36,11 +107,19 @@ function App() {
         .then(data => {
           setTableNumber(data.table_number)
           setTableError(null)
+          setIsLoadingTable(false)
         })
         .catch(err => {
-          setTableError('Invalid table token. Please scan a valid QR code.')
+          const errorMsg = 'Invalid QR code. Please scan a valid QR code to access the menu.'
+          setTableError(errorMsg)
+          setIsLoadingTable(false)
+          setToast({ message: errorMsg, type: 'error' })
           console.error('Error fetching table number:', err)
         })
+    } else {
+      // No token - app always starts with QR code scanning
+      setTableError('Please scan the QR code to access the menu')
+      setIsLoadingTable(false)
     }
   }, [])
 
@@ -58,8 +137,11 @@ function App() {
   }, [])
 
   const fetchOrders = async () => {
+    setIsLoadingOrders(true)
+    setOrdersError(null)
     try {
-      let url = `${API_BASE_URL}/api/qr-menu/orders`
+      const apiUrl = getApiBaseUrl()
+      let url = `${apiUrl}/api/qr-menu/orders`
       if (orderFilter !== 'all') {
         url += `?status=${orderFilter}`
       }
@@ -67,9 +149,17 @@ function App() {
       if (res.ok) {
         const data = await res.json()
         setOrders(data)
+        setOrdersError(null)
+      } else {
+        throw new Error('Failed to fetch orders')
       }
     } catch (err) {
+      const errorMsg = 'Failed to load orders. Please try again.'
+      setOrdersError(errorMsg)
+      setToast({ message: errorMsg, type: 'error' })
       console.error('Error fetching orders:', err)
+    } finally {
+      setIsLoadingOrders(false)
     }
   }
 
@@ -170,14 +260,17 @@ function App() {
 
   const confirmOrder = async () => {
     if (!tableNumber) {
-      alert('Table number not found. Please scan a valid QR code.')
+      setOrderError('Table number not found. Please scan a valid QR code.')
       return
     }
 
     if (cart.length === 0) {
-      alert('Your cart is empty!')
+      setOrderError('Your cart is empty!')
       return
     }
+
+    setIsSubmittingOrder(true)
+    setOrderError(null)
 
     try {
       const orderData = {
@@ -196,7 +289,8 @@ function App() {
         status: 'pending'
       }
 
-      const res = await fetch(`${API_BASE_URL}/api/qr-menu/orders`, {
+      const apiUrl = getApiBaseUrl()
+      const res = await fetch(`${apiUrl}/api/qr-menu/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -209,6 +303,8 @@ function App() {
         setOrderId(data.order_id)
         setOrderConfirmed(true)
         setActiveTab('menu')
+        setOrderError(null)
+        setToast({ message: 'Order placed successfully!', type: 'success' })
         // Reset after 5 seconds
         setTimeout(() => {
           setOrderConfirmed(false)
@@ -219,14 +315,19 @@ function App() {
         throw new Error('Failed to save order')
       }
     } catch (err) {
+      const errorMsg = 'Failed to place order. Please check your connection and try again.'
+      setOrderError(errorMsg)
+      setToast({ message: errorMsg, type: 'error' })
       console.error('Error confirming order:', err)
-      alert('Failed to place order. Please try again.')
+    } finally {
+      setIsSubmittingOrder(false)
     }
   }
 
   const markOrderDelivered = async (orderId) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/qr-menu/orders/${orderId}`, {
+      const apiUrl = getApiBaseUrl()
+      const res = await fetch(`${apiUrl}/api/qr-menu/orders/${orderId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -237,14 +338,135 @@ function App() {
       if (res.ok) {
         // Refresh orders list
         fetchOrders()
+        setToast({ message: 'Order marked as delivered!', type: 'success' })
       } else {
         throw new Error('Failed to update order')
       }
     } catch (err) {
+      const errorMsg = 'Failed to update order status. Please try again.'
+      setToast({ message: errorMsg, type: 'error' })
       console.error('Error updating order:', err)
-      alert('Failed to update order status. Please try again.')
     }
   }
+
+  const startQRScanner = () => {
+    setIsScanning(true)
+    setScanError(null)
+  }
+
+  // Start scanner after component renders (when isScanning becomes true)
+  useEffect(() => {
+    if (!isScanning) return
+
+    const initScanner = async () => {
+      try {
+        // Wait a bit for DOM to render
+        await new Promise(resolve => setTimeout(resolve, 200))
+        
+        const elementId = "qr-reader"
+        const element = document.getElementById(elementId)
+        
+        if (!element) {
+          throw new Error(`Element with id=${elementId} not found`)
+        }
+        
+        const scanner = new Html5Qrcode(elementId)
+        qrCodeScannerRef.current = scanner
+        
+        await scanner.start(
+          { facingMode: "environment" }, // Use back camera
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 }
+          },
+          (decodedText) => {
+            // QR code scanned successfully
+            handleScannedToken(decodedText)
+            stopQRScanner()
+          },
+          (errorMessage) => {
+            // Ignore scanning errors (they're frequent during scanning)
+          }
+        )
+      } catch (err) {
+        const errorMsg = 'Failed to start camera. Please ensure camera permissions are granted.'
+        setScanError(errorMsg)
+        setIsScanning(false)
+        setToast({ message: errorMsg, type: 'error' })
+        console.error('Error starting QR scanner:', err)
+      }
+    }
+
+    initScanner()
+
+    // Cleanup on unmount or when isScanning changes
+    return () => {
+      if (qrCodeScannerRef.current) {
+        qrCodeScannerRef.current.stop().catch(() => {})
+        qrCodeScannerRef.current.clear().catch(() => {})
+        qrCodeScannerRef.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isScanning])
+
+  const stopQRScanner = async () => {
+    try {
+      if (qrCodeScannerRef.current) {
+        await qrCodeScannerRef.current.stop()
+        await qrCodeScannerRef.current.clear()
+        qrCodeScannerRef.current = null
+      }
+      setIsScanning(false)
+      setScanError(null)
+    } catch (err) {
+      console.error('Error stopping QR scanner:', err)
+      setIsScanning(false)
+    }
+  }
+
+  const handleScannedToken = (token) => {
+    // Extract token from URL if it's a full URL, or use token directly
+    let extractedToken = token
+    try {
+      const url = new URL(token)
+      const params = new URLSearchParams(url.search)
+      extractedToken = params.get('t') || token
+    } catch {
+      // Not a URL, use token as-is
+      extractedToken = token
+    }
+
+    if (extractedToken) {
+      setTableToken(extractedToken)
+      setIsLoadingTable(true)
+      setTableError(null)
+      
+      // Fetch table number from API
+      const apiUrl = getApiBaseUrl()
+      fetch(`${apiUrl}/api/qr-menu/table/${extractedToken}`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error('Invalid token')
+          }
+          return res.json()
+        })
+        .then(data => {
+          setTableNumber(data.table_number)
+          setTableError(null)
+          setIsLoadingTable(false)
+          setToast({ message: 'QR code validated successfully!', type: 'success' })
+        })
+        .catch(err => {
+          const errorMsg = 'Invalid QR code. Please scan a valid QR code to access the menu.'
+          setTableError(errorMsg)
+          setIsLoadingTable(false)
+          setToast({ message: errorMsg, type: 'error' })
+          console.error('Error fetching table number:', err)
+        })
+    }
+  }
+
 
   if (orderConfirmed) {
     return (
@@ -325,8 +547,92 @@ function App() {
     )
   }
 
+  // Show QR code error screen if no table number and not loading
+  if (!tableNumber && !isLoadingTable && tableError && !isScanning) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="mb-8">
+            <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">QR Code Required</h1>
+            <p className="text-lg text-gray-600 mb-2">{tableError}</p>
+            <p className="text-sm text-gray-500 mb-6">Scan the QR code on your table to access the menu</p>
+            <button
+              onClick={startQRScanner}
+              className="w-full bg-gray-900 text-white py-3 px-6 rounded-xl font-semibold text-lg hover:bg-gray-800 active:bg-gray-700 transition-colors shadow-lg flex items-center justify-center space-x-2"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Scan QR Code</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show QR scanner screen
+  if (isScanning) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-6">
+        <div className="max-w-md w-full">
+          <div className="mb-4 text-center">
+            <h1 className="text-2xl font-bold text-white mb-2">Scan QR Code</h1>
+            <p className="text-gray-300">Point your camera at the QR code on your table</p>
+          </div>
+          
+          <div className="bg-white rounded-xl p-4 mb-4">
+            <div id="qr-reader" className="w-full"></div>
+          </div>
+
+          {scanError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">
+              <p className="text-red-800 text-sm">{scanError}</p>
+            </div>
+          )}
+
+          <button
+            onClick={stopQRScanner}
+            className="w-full bg-gray-700 text-white py-3 px-6 rounded-xl font-semibold text-lg hover:bg-gray-600 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Show loading screen while validating QR code
+  if (isLoadingTable) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="mb-8">
+            <div className="w-16 h-16 border-4 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-6"></div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Validating QR Code...</h1>
+            <p className="text-gray-600">Please wait while we verify your table</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-6">
@@ -537,11 +843,31 @@ function App() {
                     <span className="text-gray-900">Total:</span>
                     <span className="text-2xl text-gray-900">{formatPrice(getTotalPrice())}</span>
                   </div>
+                  {orderError && (
+                    <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                      <p className="text-red-800 text-sm">{orderError}</p>
+                    </div>
+                  )}
                   <button 
                     onClick={confirmOrder}
-                    className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-bold text-lg hover:bg-green-700 active:bg-green-800 transition-colors"
+                    disabled={isSubmittingOrder}
+                    className={`w-full py-3 px-4 rounded-lg font-bold text-lg transition-colors ${
+                      isSubmittingOrder
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                    }`}
                   >
-                    Confirm Order
+                    {isSubmittingOrder ? (
+                      <span className="flex items-center justify-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Placing Order...
+                      </span>
+                    ) : (
+                      'Confirm Order'
+                    )}
                   </button>
                 </div>
               </div>
@@ -587,7 +913,24 @@ function App() {
               </div>
             </div>
 
-            {orders.length === 0 ? (
+            {ordersError && (
+              <div className="card bg-red-50 border border-red-200">
+                <p className="text-red-800">{ordersError}</p>
+                <button
+                  onClick={fetchOrders}
+                  className="mt-3 text-red-600 hover:text-red-800 font-medium text-sm"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+            
+            {isLoadingOrders ? (
+              <div className="card text-center py-12">
+                <div className="w-12 h-12 border-4 border-gray-300 border-t-gray-900 rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading orders...</p>
+              </div>
+            ) : orders.length === 0 ? (
               <div className="card text-center py-12">
                 <div className="text-6xl mb-4">📋</div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">No orders found</h3>

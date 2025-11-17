@@ -12,6 +12,7 @@
     "serve": "cd dist && python3 -m http.server 9111 --bind 0.0.0.0"
   },
   "dependencies": {
+    "html5-qrcode": "^2.3.8",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
