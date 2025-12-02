@@ -5,6 +5,8 @@ import ScanTablePage from './pages/ScanTablePage'
 import MenuAppPage from './pages/MenuAppPage'
 import DashboardLoginPage from './pages/DashboardLoginPage'
 import DashboardPage from './pages/DashboardPage'
+import RoboLogsPage from './pages/RoboLogsPage'
+import TablesPage from './pages/TablesPage'
 
 function App() {
   const [toast, setToast] = useState(null)
@@ -99,6 +101,38 @@ function App() {
                 />
               ) : (
                 <DashboardLoginPage onLogin={handleAdminLogin} />
+              )
+            } 
+          />
+          
+          {/* Robot Logs Dashboard route - Admin only */}
+          <Route 
+            path="/dashboard/robologs" 
+            element={
+              isAuthenticated ? (
+                <RoboLogsPage 
+                  isAuthenticated={isAuthenticated}
+                  onLogout={handleAdminLogout}
+                  setToast={setToast}
+                />
+              ) : (
+                <Navigate to="/dashboard" replace />
+              )
+            } 
+          />
+          
+          {/* Tables Management route - Admin only */}
+          <Route 
+            path="/dashboard/tables" 
+            element={
+              isAuthenticated ? (
+                <TablesPage 
+                  isAuthenticated={isAuthenticated}
+                  onLogout={handleAdminLogout}
+                  setToast={setToast}
+                />
+              ) : (
+                <Navigate to="/dashboard" replace />
               )
             } 
           />

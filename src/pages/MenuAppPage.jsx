@@ -15,22 +15,30 @@ import { createOrder } from '../services/orderService'
 const menuItems = [
   {
     id: 1,
-    name: 'Margherita Pizza',
-    description: 'Fresh mozzarella, tomato sauce, basil',
-    price: 1499,
-    category: 'Pizza',
-    image: '🍕'
+    name: 'Garlic Bread',
+    description: 'Fresh mozzarella, and Bread',
+    price: 139,
+    category: 'Appetizers',
+    image: '🍞'
   },
   {
     id: 2,
     name: 'Caesar Salad',
-    description: 'Romaine lettuce, parmesan, croutons',
+    description: 'Cold Brew with milk and ice',
     price: 999,
-    category: 'Salads',
+    category: 'Beverage',
     image: '🥗'
   },
   {
     id: 3,
+    name: 'Cold Coffee',
+    description: 'Cold brew coffee with milk and ice',
+    price: 199,
+    category: 'Beverage',
+    image: '☕'
+  },
+  {
+    id: 4,
     name: 'Pasta Carbonara',
     description: 'Eggs, cheese, pancetta, black pepper',
     price: 1299,
@@ -38,7 +46,7 @@ const menuItems = [
     image: '🍝'
   },
   {
-    id: 4,
+    id: 5,
     name: 'Tiramisu',
     description: 'Coffee-flavored Italian dessert',
     price: 699,
@@ -46,7 +54,7 @@ const menuItems = [
     image: '🍰'
   },
   {
-    id: 5,
+    id: 6,
     name: 'Bhel Puri',
     description: 'Crispy puffed rice with tangy tamarind chutney, onions, and sev',
     price: 149,
